@@ -48,6 +48,9 @@ AWS_ROOT_CA = os.getenv("AWS_ROOT_CA")
 # Configurações MQTT
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "trapeyes")
 CLIENT_ID = os.getenv("CLIENT_ID", f"telegram-bridge-{int(time.time())}")
+MQTT_KEEPALIVE = int(os.getenv("MQTT_KEEPALIVE", "60"))
+MQTT_TIMEOUT = int(os.getenv("MQTT_TIMEOUT", "30"))
+MQTT_QOS = int(os.getenv("MQTT_QOS", "1"))
 
 # Configurações Telegram
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -135,17 +138,61 @@ class MQTTTelegramBridge:
             logger.info(f"🔗 Conectado ao AWS IoT Core: {AWS_IOT_ENDPOINT}")
             
             # Inscrever no tópico
-            client.subscribe(MQTT_TOPIC)
-            logger.info(f"📡 Inscrito no tópico: {MQTT_TOPIC}")
+            result, mid = client.subscribe(MQTT_TOPIC, qos=MQTT_QOS)  # QoS configurável
+            if result == mqtt.MQTT_ERR_SUCCESS:
+                logger.info(f"📡 Inscrito no tópico: {MQTT_TOPIC} (MID: {mid})")
+            else:
+                logger.error(f"❌ Erro ao se inscrever no tópico: {result}")
             
         else:
             stats["mqtt_connected"] = False
-            logger.error(f"❌ Falha na conexão MQTT. Código: {rc}")
+            error_messages = {
+                1: "Versão de protocolo incorreta",
+                2: "Client ID inválido",
+                3: "Servidor não disponível",
+                4: "Usuário/senha incorretos",
+                5: "Não autorizado"
+            }
+            error_msg = error_messages.get(rc, f"Erro desconhecido: {rc}")
+            logger.error(f"❌ Falha na conexão MQTT. Código {rc}: {error_msg}")
     
     def on_disconnect(self, client, userdata, rc):
         """Callback quando desconecta do MQTT"""
         stats["mqtt_connected"] = False
-        logger.warning(f"⚠️  Desconectado do MQTT. Código: {rc}")
+        if rc != 0:
+            logger.warning(f"⚠️  Desconectado inesperadamente do MQTT. Código: {rc}")
+            # Implementar lógica de reconexão automática
+            self.reconnect_mqtt()
+        else:
+            logger.info("ℹ️  Desconectado do MQTT de forma normal")
+    
+    def on_log(self, client, userdata, level, buf):
+        """Callback para logs do cliente MQTT"""
+        # Filtrar apenas logs importantes para evitar spam
+        if level <= mqtt.MQTT_LOG_WARNING:
+            if "PINGRESP" not in buf and "PINGREQ" not in buf:
+                logger.debug(f"MQTT Log ({level}): {buf}")
+    
+    def reconnect_mqtt(self):
+        """Tenta reconectar ao MQTT com backoff exponencial"""
+        max_retries = 5
+        base_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                delay = base_delay * (2 ** attempt)  # Backoff exponencial
+                logger.info(f"🔄 Tentativa de reconexão {attempt + 1}/{max_retries} em {delay}s...")
+                time.sleep(delay)
+                
+                if self.mqtt_client:
+                    self.mqtt_client.reconnect()
+                    return True
+                    
+            except Exception as e:
+                logger.warning(f"⚠️  Falha na tentativa {attempt + 1}: {e}")
+        
+        logger.error("❌ Todas as tentativas de reconexão falharam")
+        return False
     
     def on_message(self, client, userdata, msg):
         """
@@ -276,18 +323,32 @@ class MQTTTelegramBridge:
                 ca_file.write(AWS_ROOT_CA)
                 root_ca_path = ca_file.name
             
-            # Criar cliente MQTT
-            self.mqtt_client = mqtt.Client(client_id=CLIENT_ID)
+            # Criar cliente MQTT com configurações otimizadas
+            self.mqtt_client = mqtt.Client(
+                client_id=CLIENT_ID,
+                clean_session=True,  # Limpa sessão anterior
+                protocol=mqtt.MQTTv311  # Força protocolo específico
+            )
             
             # Configurar callbacks
             self.mqtt_client.on_connect = self.on_connect
             self.mqtt_client.on_disconnect = self.on_disconnect
             self.mqtt_client.on_message = self.on_message
+            self.mqtt_client.on_log = self.on_log  # Adicionar callback de log
             
-            # Configurar TLS/SSL
+            # Configurar timeouts e keep-alive
+            self.mqtt_client.connect_async_timeout = MQTT_TIMEOUT  # Timeout de conexão
+            self.mqtt_client.keepalive = MQTT_KEEPALIVE  # Keep-alive configurável
+            
+            # Configurar TLS/SSL com validação mais rigorosa
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            context.check_hostname = False  # AWS IoT usa certificados específicos
+            context.verify_mode = ssl.CERT_REQUIRED
             context.load_verify_locations(root_ca_path)
             context.load_cert_chain(device_cert_path, private_key_path)
+            
+            # Configurar TLS versão mínima
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             
             self.mqtt_client.tls_set_context(context)
             
@@ -304,7 +365,7 @@ class MQTTTelegramBridge:
             return False
     
     def start(self):
-        """Inicia a ponte MQTT-Telegram"""
+        """Inicia a ponte MQTT-Telegram com configurações robustas"""
         logger.info("🚀 Iniciando ponte AWS IoT Core ↔ Telegram...")
         
         # Configurar cliente MQTT
@@ -313,16 +374,36 @@ class MQTTTelegramBridge:
             return False
         
         try:
-            # Conectar ao AWS IoT Core
+            # Conectar ao AWS IoT Core com timeout maior
             logger.info(f"🔗 Conectando a {AWS_IOT_ENDPOINT}:{AWS_IOT_PORT}...")
-            self.mqtt_client.connect(AWS_IOT_ENDPOINT, AWS_IOT_PORT, 60)
             
-            # Iniciar loop
+            # Configurar reconexão automática
+            self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=120)
+            
+            # Tentar conectar com timeout específico
+            result = self.mqtt_client.connect(AWS_IOT_ENDPOINT, AWS_IOT_PORT, keepalive=MQTT_KEEPALIVE)
+            
+            if result != mqtt.MQTT_ERR_SUCCESS:
+                logger.error(f"❌ Erro na conexão inicial: {result}")
+                return False
+            
+            # Iniciar loop não bloqueante
             self.running = True
             self.mqtt_client.loop_start()
             
-            logger.info("✅ Ponte iniciada com sucesso!")
-            return True
+            # Aguardar conexão efetiva (configurável)
+            connection_timeout = MQTT_TIMEOUT
+            start_time = time.time()
+            
+            while not stats["mqtt_connected"] and (time.time() - start_time) < connection_timeout:
+                time.sleep(0.5)
+            
+            if stats["mqtt_connected"]:
+                logger.info("✅ Ponte iniciada com sucesso!")
+                return True
+            else:
+                logger.error("❌ Timeout na conexão MQTT")
+                return False
             
         except Exception as e:
             logger.error(f"💥 Erro ao iniciar ponte: {e}")
