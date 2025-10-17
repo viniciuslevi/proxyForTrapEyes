@@ -1,24 +1,25 @@
 version: '3.8'
 
 services:
-  telegram-proxy:
+  # 🌉 Ponte AWS IoT Core ↔ Telegram
+  mqtt-telegram-bridge:
     build: .
-    container_name: telegram-proxy
-    ports:
-      - "5000:5000"
+    container_name: mqtt-telegram-bridge
+    env_file: .env
     environment:
-      # ⚠️  IMPORTANTE: Substitua pelo seu token real do Telegram Bot
-      # Obtenha em: https://t.me/botfather
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-1234567890:AAEhBOweik6ad2qkQfdsionLK2jlsds}
-      - PORT=5000
-      - DEBUG=false
+      # Carrega todas as configurações do arquivo .env
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - DEFAULT_CHAT_ID=${DEFAULT_CHAT_ID}
+      - AWS_IOT_ENDPOINT=${AWS_IOT_ENDPOINT}
+      - AWS_IOT_PORT=${AWS_IOT_PORT}
+      - MQTT_TOPIC=${MQTT_TOPIC}
+      - CLIENT_ID=${CLIENT_ID}
+      - AWS_DEVICE_CERT=${AWS_DEVICE_CERT}
+      - AWS_PRIVATE_KEY=${AWS_PRIVATE_KEY}
+      - AWS_ROOT_CA=${AWS_ROOT_CA}
+      - DEBUG=${DEBUG}
+    command: python mqtt_telegram_bridge.py
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/status"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     networks:
       - telegram-net
 
