@@ -1,315 +1,265 @@
-# 🤖 Proxy Telegram + AWS IoT Bridge
+# 🚨 TrapEyes Message Server
 
-Este projeto oferece duas funcionalidades principais:
+Sistema de monitoramento em tempo real que recebe mensagens via HTTP POST e armazena em memória para visualização.
 
-1. **Proxy HTTP → Telegram**: Recebe requisições HTTP do Pico W e encaminha para a API do Telegram via HTTPS
-2. **🌉 Ponte AWS IoT → Telegram**: Conecta ao AWS IoT Core via MQTT e encaminha mensagens para o Telegram
+## ✨ Características
 
-## 🚀 Execução com Docker (Recomendado)
+- 📡 **API REST** para receber mensagens
+- 📊 **Dashboard Web** para visualizar mensagens em tempo real  
+- 🐳 **Docker** pronto para uso
+- ☁️ **Terraform** para deploy na AWS
+- 💾 **Armazenamento em memória** (até 1000 mensagens)
 
-### Pré-requisitos
-- Docker
-- Docker Compose
-- Credenciais AWS IoT Core (já incluídas no projeto)
+## 🚀 Execução Rápida
 
-### Configuração Rápida
+### Com Docker (Recomendado)
 
-1. **Clone ou baixe o projeto**
 ```bash
-git clone <seu-repo>
-cd proxy
-```
-
-2. **Configure as variáveis de ambiente**
-```bash
-# Copie o arquivo de exemplo
+# 1. Configure as variáveis (opcional)
 cp .env.example .env
 
-# Edite com suas configurações reais
-nano .env
+# 2. Execute
+docker compose up -d
+
+# 3. Acesse
+open http://localhost:5000
 ```
 
-**Variáveis importantes:**
-- `TELEGRAM_TOKEN`: Token do seu bot Telegram (obrigatório)
-- `DEFAULT_CHAT_ID`: Chat ID padrão para mensagens IoT (recomendado)
-- `MQTT_TOPIC`: Tópico MQTT para ouvir (padrão: sensor/data)
+### Sem Docker
 
-3. **Execute ambos os serviços**
 ```bash
-# Build e execução em modo detached (background)
-docker-compose up -d
+# 1. Instale dependências
+pip install -r requirements.txt
 
-# Para ver os logs de ambos os serviços
-docker-compose logs -f
-
-# Para ver logs de um serviço específico
-docker-compose logs -f telegram-proxy
-docker-compose logs -f mqtt-telegram-bridge
-
-# Para parar ambos
-docker-compose down
+# 2. Execute
+python app.py
 ```
 
-### Comandos Docker Alternativos
+## 📋 Endpoints da API
 
-**Build manual da imagem:**
+### POST /api/messages
+Recebe mensagens de dispositivos IoT
+
+**Exemplo:**
 ```bash
-docker build -t telegram-proxy .
-```
-
-**Execução manual do proxy HTTP:**
-```bash
-docker run -d \
-  --name telegram-proxy \
-  -p 5000:5000 \
-  -e TELEGRAM_TOKEN="seu_token_aqui" \
-  telegram-proxy
-```
-
-**Execução manual da ponte MQTT:**
-```bash
-docker run -d \
-  --name mqtt-bridge \
-  -e TELEGRAM_TOKEN="seu_token_aqui" \
-  -e DEFAULT_CHAT_ID="123456789" \
-  -v $(pwd)/c7ced95a27be9307d25c3a100eb3a6dbfb2e1cc76d892fb8d4600c8268cc2388-certificate.pem.crt:/app/c7ced95a27be9307d25c3a100eb3a6dbfb2e1cc76d892fb8d4600c8268cc2388-certificate.pem.crt:ro \
-  -v $(pwd)/c7ced95a27be9307d25c3a100eb3a6dbfb2e1cc76d892fb8d4600c8268cc2388-private.pem.key:/app/c7ced95a27be9307d25c3a100eb3a6dbfb2e1cc76d892fb8d4600c8268cc2388-private.pem.key:ro \
-  -v $(pwd)/AmazonRootCA1.pem:/app/AmazonRootCA1.pem:ro \
-  telegram-proxy python mqtt_telegram_bridge.py
-```
-
-## 📋 Funcionalidades Disponíveis
-
-### 🌐 Proxy HTTP (Porta 5000)
-
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/` | GET | Página inicial com estatísticas |
-| `/send` | POST | Enviar mensagem para Telegram |
-| `/status` | GET | Status do servidor (JSON) |
-| `/test` | POST | Teste sem enviar para Telegram |
-
-### 🌉 Ponte AWS IoT Core → Telegram
-
-- **Conecta automaticamente** ao AWS IoT Core (`a25833zo7tzuak-ats.iot.us-east-1.amazonaws.com:8883`)
-- **Escuta mensagens MQTT** no tópico configurado (padrão: `sensor/data`)
-- **Envia para Telegram** com formatação automática
-- **Suporte a SSL/TLS** com certificados AWS IoT
-
-## 🧪 Testando os Serviços
-
-### Teste do Proxy HTTP
-
-```bash
-# Teste básico
-curl -X POST http://localhost:5000/send \
+curl -X POST http://localhost:5000/api/messages \
   -H "Content-Type: application/json" \
-  -d '{"chat_id":"SEU_CHAT_ID","text":"Teste do proxy Docker!"}'
-
-# Verificar status
-curl http://localhost:5000/status
+  -d '{
+    "message": "Alerta de temperatura alta!",
+    "device_id": "sensor-01",
+    "location": "Sala 1",
+    "temperature": 35.5,
+    "alert_level": "high"
+  }'
 ```
 
-### Teste da Ponte MQTT
+### GET /api/messages
+Lista todas as mensagens
 
-**Formato de mensagem MQTT esperado:**
-
+**Exemplo de resposta:**
 ```json
 {
-  "chat_id": "123456789",
-  "message": "Temperatura crítica detectada!",
-  "sensor": "temp01",
-  "temperature": 45.2,
-  "timestamp": "2024-01-01T12:00:00Z"
+  "success": true,
+  "messages": [
+    {
+      "message": "Alerta de temperatura alta!",
+      "device_id": "sensor-01",
+      "location": "Sala 1",
+      "temperature": 35.5,
+      "alert_level": "high",
+      "timestamp": "2025-11-03T10:30:00.000000",
+      "source_ip": "192.168.1.100"
+    }
+  ],
+  "count": 1,
+  "stats": {
+    "total_messages": 1,
+    "errors": 0
+  }
 }
 ```
 
-**Ou formato simples (usa chat padrão):**
+### GET /api/stats
+Retorna estatísticas do servidor
 
-```json
-{
-  "message": "Alerta: Temperatura alta!",
-  "value": 35.5
+### GET /health
+Health check para monitoramento
+
+### GET /
+Dashboard web interativo
+
+## 🧪 Testando a Aplicação
+
+```bash
+# Enviar mensagem de teste
+curl -X POST http://localhost:5000/api/messages \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Teste", "device_id": "test-01"}'
+
+# Verificar mensagens
+curl http://localhost:5000/api/messages
+
+# Ver estatísticas
+curl http://localhost:5000/api/stats
+```
+
+## 📱 Exemplo de Integração com ESP32/Pico W
+
+### Arduino/ESP32
+```cpp
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+void enviarMensagem(float temperatura) {
+  HTTPClient http;
+  http.begin("http://seu-servidor:5000/api/messages");
+  http.addHeader("Content-Type", "application/json");
+  
+  StaticJsonDocument<200> doc;
+  doc["message"] = "Leitura do sensor";
+  doc["device_id"] = "esp32-01";
+  doc["location"] = "Sala 1";
+  doc["temperature"] = temperatura;
+  doc["alert_level"] = temperatura > 30 ? "high" : "low";
+  
+  String json;
+  serializeJson(doc, json);
+  
+  int httpCode = http.POST(json);
+  http.end();
 }
 ```
 
-**Resultado no Telegram:**
+### MicroPython/Pico W
+```python
+import urequests
+import ujson
+
+def enviar_mensagem(temperatura):
+    url = "http://seu-servidor:5000/api/messages"
+    dados = {
+        "message": "Leitura do sensor",
+        "device_id": "pico-01",
+        "location": "Sala 1",
+        "temperature": temperatura,
+        "alert_level": "high" if temperatura > 30 else "low"
+    }
+    
+    try:
+        resposta = urequests.post(
+            url,
+            json=dados,
+            headers={"Content-Type": "application/json"}
+        )
+        print(f"Status: {resposta.status_code}")
+        resposta.close()
+    except Exception as e:
+        print(f"Erro: {e}")
 ```
-🤖 AWS IoT → Telegram
 
-📢 Temperatura crítica detectada!
+## 🐳 Docker
 
-🌡️ Temperatura: 45.2°C
-📡 Sensor: temp01
-🕐 Timestamp: 2024-01-01T12:00:00Z
+### Build e execução
+```bash
+# Build
+docker build -t trapeyes-server .
 
-📡 Tópico: sensor/data
-🕐 Recebido: 14:30:25
+# Executar
+docker run -d \
+  -p 5000:5000 \
+  -e PORT=5000 \
+  -e MAX_MESSAGES=1000 \
+  --name trapeyes \
+  trapeyes-server
+
+# Ver logs
+docker logs -f trapeyes
 ```
 
-## 🔧 Configuração Avançada
+### Docker Compose
+```bash
+# Iniciar
+docker compose up -d
+
+# Ver logs
+docker compose logs -f
+
+# Parar
+docker compose down
+```
+
+## ☁️ Deploy na AWS
+
+Veja o guia completo de deploy em [terraform/README.md](terraform/README.md)
+
+Opções disponíveis:
+- **AWS App Runner** (simples e gerenciado)
+- **ECS Fargate** (completo com VPC, ALB, RDS)
+
+## 🔧 Configuração
 
 ### Variáveis de Ambiente
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `TELEGRAM_TOKEN` | **obrigatório** | Token do bot Telegram |
-| `DEFAULT_CHAT_ID` | - | Chat ID padrão para mensagens IoT |
-| `AWS_IOT_ENDPOINT` | `a25833zo7tzuak-ats.iot.us-east-1.amazonaws.com` | Endpoint AWS IoT |
-| `AWS_IOT_PORT` | `8883` | Porta AWS IoT |
-| `MQTT_TOPIC` | `sensor/data` | Tópico MQTT para ouvir |
-| `CLIENT_ID` | `telegram-bridge` | ID do cliente MQTT |
-| `PORT` | `5000` | Porta do proxy HTTP |
+| `PORT` | `5000` | Porta do servidor HTTP |
+| `MAX_MESSAGES` | `1000` | Máximo de mensagens em memória |
 | `DEBUG` | `false` | Modo debug do Flask |
 
-### Exemplo de Uso no Pico W
+## 📊 Dashboard
 
-#### Via HTTP (Proxy):
-```python
-import network
-import urequests
-import json
+O dashboard web oferece:
+- 📈 Visualização em tempo real das mensagens
+- 📊 Estatísticas de uso
+- 🔄 Atualização automática a cada 5 segundos
+- 🎨 Interface responsiva e moderna
+- 🔍 Detalhamento de cada mensagem com badges coloridos
 
-def enviar_http(chat_id, texto):
-    url = "http://SEU_IP:5000/send"
-    dados = {"chat_id": chat_id, "text": texto}
-    
-    try:
-        resposta = urequests.post(url, json=dados, 
-                                headers={'Content-Type': 'application/json'})
-        print(f"Status: {resposta.status_code}")
-        resposta.close()
-        return True
-    except Exception as e:
-        print(f"Erro: {e}")
-        return False
-```
-
-#### Via MQTT (AWS IoT):
-```python
-import json
-from umqtt.simple import MQTTClient
-
-def enviar_mqtt(temperatura, umidade):
-    # Configurar cliente MQTT com certificados
-    client = MQTTClient("pico-sensor", "a25833zo7tzuak-ats.iot.us-east-1.amazonaws.com", 
-                       port=8883, ssl=True)
-    
-    # Dados do sensor
-    dados = {
-        "message": f"Leitura do sensor",
-        "temperature": temperatura,
-        "humidity": umidade,
-        "sensor": "pico-dht22",
-        "timestamp": "2024-01-01T12:00:00Z"
-    }
-    
-    try:
-        client.connect()
-        client.publish("sensor/data", json.dumps(dados))
-        client.disconnect()
-        return True
-    except Exception as e:
-        print(f"Erro MQTT: {e}")
-        return False
-```
-
-## � Monitoramento
-
-**Ver logs em tempo real:**
-```bash
-# Todos os serviços
-docker-compose logs -f
-
-# Apenas proxy HTTP
-docker-compose logs -f telegram-proxy
-
-# Apenas ponte MQTT
-docker-compose logs -f mqtt-telegram-bridge
-```
-
-**Verificar health check:**
-```bash
-docker ps
-# STATUS mostrará "healthy" para serviços ativos
-```
-
-**Estatísticas dos containers:**
-```bash
-docker stats
-```
+Acesse em: http://localhost:5000
 
 ## 🛡️ Segurança
 
 - ✅ Container executa como usuário não-root
-- ✅ Imagem baseada em Python slim (menos vulnerabilidades)
+- ✅ Imagem baseada em Python slim
 - ✅ Health checks configurados
 - ✅ Restart automático em caso de falha
-- ✅ Certificados AWS IoT montados como read-only
-- ✅ Credenciais via variáveis de ambiente
-- ⚠️ **Importante**: Use HTTPS em produção (configure nginx ou traefik)
+- ⚠️ **Importante**: Configure HTTPS em produção
 
 ## 🆘 Solução de Problemas
 
-### Problemas Gerais
-
-**Containers não iniciam:**
+### Erro ao iniciar
 ```bash
 # Verificar logs
-docker-compose logs
+docker compose logs
 
-# Verificar se as portas estão disponíveis
+# Verificar portas
 netstat -tlnp | grep :5000
 ```
 
-**Erro de token Telegram:**
-- Verifique se o `TELEGRAM_TOKEN` está correto
-- Obtenha um novo token em [@BotFather](https://t.me/botfather)
+### Mensagens não aparecem
+- Verifique se o JSON está válido
+- Confirme que está enviando para o endpoint correto
+- Verifique os logs: `docker compose logs -f`
 
-### Problemas MQTT/AWS IoT
-
-**Erro de conexão MQTT:**
-```bash
-# Verificar logs específicos
-docker-compose logs mqtt-telegram-bridge
-
-# Verificar certificados
-ls -la *.pem*
-```
-
-**Certificados inválidos:**
-- Verifique se os arquivos `.pem.crt` e `.pem.key` existem
-- Confirme se o endpoint AWS IoT está correto
-- Teste conectividade: `telnet a25833zo7tzuak-ats.iot.us-east-1.amazonaws.com 8883`
-
-**Mensagens não chegam:**
-- Verifique se o `DEFAULT_CHAT_ID` está configurado
-- Confirme se o tópico MQTT está correto
-- Verifique se as mensagens estão no formato JSON válido
-
-## 📞 Como Obter o Chat ID
-
-Para enviar mensagens, você precisa do chat_id:
-
-1. Inicie uma conversa com seu bot no Telegram
-2. Envie qualquer mensagem
-3. Acesse: `https://api.telegram.org/bot<SEU_TOKEN>/getUpdates`
-4. Procure por `"chat":{"id":123456789}` na resposta
-
-## 🏗️ Arquitetura do Sistema
+## 📄 Estrutura do Projeto
 
 ```
-[Dispositivos IoT] → [AWS IoT Core] → [MQTT Bridge] → [Telegram Bot API] → [Chat Telegram]
-                                           ↑
-[Pico W] → [HTTP Proxy] → [Telegram Bot API] → [Chat Telegram]
+proxy/
+├── app.py                  # Aplicação Flask principal
+├── requirements.txt        # Dependências Python
+├── Dockerfile             # Imagem Docker
+├── docker-compose.yml     # Orquestração
+├── .env                   # Variáveis de ambiente
+├── .env.example          # Exemplo de configuração
+├── .gitignore            # Arquivos ignorados
+├── README.md             # Esta documentação
+└── terraform/            # Infraestrutura como código
+    ├── simple.tf         # Deploy simples (App Runner)
+    ├── main.tf           # Deploy completo (ECS)
+    └── README.md         # Guia de deploy
 ```
-
-## 🚀 Fluxos Suportados
-
-1. **HTTP → Telegram**: `Pico W` → `Proxy HTTP` → `Telegram`
-2. **MQTT → Telegram**: `IoT Device` → `AWS IoT` → `MQTT Bridge` → `Telegram`
-3. **Híbrido**: Ambos os fluxos funcionam simultaneamente
 
 ---
 
-**🎉 Agora você tem uma ponte completa entre AWS IoT Core e Telegram!**
+**Desenvolvido com ❤️ para TrapEyes**
