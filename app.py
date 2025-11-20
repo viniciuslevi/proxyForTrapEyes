@@ -716,22 +716,7 @@ def index():
         ];
         
         // Gerar dados iniciais simulados
-        function generateInitialData() {
-            const now = new Date();
-            for (let i = 23; i >= 0; i--) {
-                const time = new Date(now - i * 3600000);
-                detectionsData.push({
-                    time: time.getHours() + ':00',
-                    count: Math.floor(Math.random() * 30) + 5  // 5-35 moscas por hora
-                });
-                confidenceData.push({
-                    time: time.getHours() + ':00',
-                    value: 0.75 + Math.random() * 0.2  // 75-95% confiança
-                });
-            }
-        }
-        
-        generateInitialData();
+        // Dados dos graficos serao carregados da API (apenas dados reais)
         
         // Gráfico de Detecções por Hora
         const detectionsCtx = document.getElementById('detectionsChart').getContext('2d');
@@ -1009,7 +994,7 @@ def index():
                     confCount++;
                 }
             });
-            avgConfidence = confCount > 0 ? ((avgConfidence / confCount) * 100).toFixed(1) : 85;
+            avgConfidence = confCount > 0 ? ((avgConfidence / confCount) * 100).toFixed(1) : 0;
             
             // Atualizar dispositivos com dados reais
             devicesData.forEach(device => {
@@ -1120,9 +1105,43 @@ def index():
                 renderDetectionsTable(data.messages);
                 renderDevices();
                 
-                // Atualizar gráficos com dados reais se disponíveis
+                // Atualizar graficos com dados reais se disponiveis
                 if (data.messages && data.messages.length > 0) {
-                    // Atualizar gráfico de ocupação (últimas 10)
+                    // Agrupar moscas detectadas por hora (ultimas 24h)
+                    const hourlyDetections = {};
+                    data.messages.forEach(msg => {
+                        if (msg.timestamp) {
+                            const hour = msg.timestamp.split(' ')[1].split(':')[0] + ':00';
+                            const moscas = msg.deteccoes?.total || 0;
+                            hourlyDetections[hour] = (hourlyDetections[hour] || 0) + moscas;
+                        }
+                    });
+                    
+                    // Atualizar grafico de deteccoes por hora
+                    if (Object.keys(hourlyDetections).length > 0) {
+                        const hours = Object.keys(hourlyDetections).sort();
+                        const counts = hours.map(h => hourlyDetections[h]);
+                        detectionsChart.data.labels = hours;
+                        detectionsChart.data.datasets[0].data = counts;
+                        detectionsChart.update('none');
+                    }
+                    
+                    // Atualizar grafico de confianca media ao longo do tempo
+                    const confidenceData = data.messages
+                        .filter(m => m.deteccoes?.confianca_media)
+                        .slice(-24)
+                        .map((m, i) => ({
+                            label: `#${i + 1}`,
+                            value: (m.deteccoes.confianca_media * 100).toFixed(1)
+                        }));
+                    
+                    if (confidenceData.length > 0) {
+                        confidenceChart.data.labels = confidenceData.map(d => d.label);
+                        confidenceChart.data.datasets[0].data = confidenceData.map(d => d.value);
+                        confidenceChart.update('none');
+                    }
+                    
+                    // Atualizar grafico de ocupacao (ultimas 10)
                     const lastOccupancy = data.messages.slice(-10).map(m => m.deteccoes?.ocupacao_pct || 0);
                     if (lastOccupancy.length > 0) {
                         occupancyChart.data.datasets[0].data = lastOccupancy;
@@ -1130,7 +1149,7 @@ def index():
                         occupancyChart.update('none');
                     }
                     
-                    // Atualizar gráfico de tempo de inferência (últimas 10)
+                    // Atualizar grafico de tempo de inferencia (ultimas 10)
                     const lastInference = data.messages.slice(-10).map(m => m.tempo_inferencia_ms || 0);
                     if (lastInference.length > 0) {
                         inferenceChart.data.datasets[0].data = lastInference;
@@ -1144,45 +1163,12 @@ def index():
             }
         }
         
-        // Simular atualização de dados em tempo real
-        function simulateRealtimeUpdate() {
-            // Adicionar novo ponto aos gráficos
-            const now = new Date();
-            const timeLabel = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0');
-            
-            // Atualizar detecções
-            detectionsChart.data.labels.shift();
-            detectionsChart.data.labels.push(timeLabel);
-            detectionsChart.data.datasets[0].data.shift();
-            detectionsChart.data.datasets[0].data.push(Math.floor(Math.random() * 30) + 5);
-            detectionsChart.update('none');
-            
-            // Atualizar confiança
-            confidenceChart.data.labels.shift();
-            confidenceChart.data.labels.push(timeLabel);
-            confidenceChart.data.datasets[0].data.shift();
-            confidenceChart.data.datasets[0].data.push((0.75 + Math.random() * 0.2) * 100);
-            confidenceChart.update('none');
-            
-            // Atualizar dispositivos simulados
-            devicesData.forEach(device => {
-                device.flies = (device.flies || 0) + Math.floor(Math.random() * 5);
-                device.captures = (device.captures || 0) + (Math.random() > 0.7 ? 1 : 0);
-                device.avgConf = Math.floor(75 + Math.random() * 20);
-            });
-            
-            renderDevices();
-        }
-        
-        // Inicialização
+        // Inicializacao
         renderDevices();
         loadData();
         
-        // Atualizar dados a cada 5 segundos
+        // Atualizar dados reais da API a cada 5 segundos
         setInterval(loadData, 5000);
-        
-        // Simular atualizações em tempo real a cada 10 segundos
-        setInterval(simulateRealtimeUpdate, 10000);
     </script>
 </body>
 </html>
