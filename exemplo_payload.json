@@ -1,0 +1,93 @@
+{
+  "timestamp": "2025-11-20 15:03:15",
+  "tempo_inferencia_ms": 87.5,
+  "deteccoes": {
+    "total": 15,
+    "limiar_confianca": 0.5,
+    "confianca_media": 0.9234,
+    "ocupacao_pct": 18.5,
+    "area_total_px": 12345.67,
+    "itens": [
+      {
+        "classe_id": 0,
+        "confianca": 0.9523,
+        "bounding_box": [120, 250, 165, 295]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.8834,
+        "bounding_box": [340, 180, 385, 225]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9102,
+        "bounding_box": [560, 420, 605, 465]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.8956,
+        "bounding_box": [210, 310, 255, 355]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9234,
+        "bounding_box": [450, 520, 495, 565]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.8723,
+        "bounding_box": [680, 290, 725, 335]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9456,
+        "bounding_box": [150, 480, 195, 525]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.889,
+        "bounding_box": [390, 350, 435, 395]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9178,
+        "bounding_box": [520, 210, 565, 255]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.8667,
+        "bounding_box": [280, 440, 325, 485]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9345,
+        "bounding_box": [610, 380, 655, 425]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.8912,
+        "bounding_box": [180, 560, 225, 605]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9089,
+        "bounding_box": [420, 270, 465, 315]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.8778,
+        "bounding_box": [550, 490, 595, 535]
+      },
+      {
+        "classe_id": 0,
+        "confianca": 0.9267,
+        "bounding_box": [310, 330, 355, 375]
+      }
+    ]
+  },
+  "diagnostico": {
+    "ocupacao_excessiva": false,
+    "anormal": false
+  },
+  "lora_id": "LORA-001"
+}

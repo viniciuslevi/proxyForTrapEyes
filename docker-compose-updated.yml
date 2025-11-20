@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  trapeyes:
+    build: .
+    container_name: trapeyes-server
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - MAX_MESSAGES=${MAX_MESSAGES:-1000}
+      - DEBUG=${DEBUG:-false}
+      - OCUPACAO_EXCESSIVA_THRESHOLD=${OCUPACAO_EXCESSIVA_THRESHOLD:-20}
+      - ANORMAL_OCUPACAO_THRESHOLD=${ANORMAL_OCUPACAO_THRESHOLD:-30}
+      - ANORMAL_MOSCAS_THRESHOLD=${ANORMAL_MOSCAS_THRESHOLD:-50}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import requests; requests.get('http://localhost:8080/health', timeout=2)",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - trapeyes-network
+
+networks:
+  trapeyes-network:
+    driver: bridge
