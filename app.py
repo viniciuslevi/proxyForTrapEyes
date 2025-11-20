@@ -1192,11 +1192,20 @@ def get_messages():
         logger.error(f"[ERROR] Erro ao listar mensagens: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
-def expand_lora_payload(compact_data):
+def expand_lora_payload(raw_data):
     """
-    Converte payload compacto LoRa para formato expandido interno
+    Converte payload do gateway LoRa para formato expandido interno
     
-    Formato LoRa (compacto):
+    Formato Gateway LoRa (vem do gateway):
+    {
+        "client_id": "gateway-pico",
+        "message_id": 146,
+        "lora_data": "{\"dt\":\"20112025\",\"hr\":\"16:06:49\",\"ti\":1579,\"m\":4,...}",
+        "rssi": -57,
+        "snr": 9
+    }
+    
+    Formato LoRa (compacto - dentro de lora_data):
     {
         "dt": "20112025",        # data ddmmyyyy
         "hr": "14:30:45",        # hora
@@ -1210,14 +1219,28 @@ def expand_lora_payload(compact_data):
             "oe": false,         # ocupacao_excessiva
             "an": false          # anormal
         },
-        "id": "LORA-001"         # id do dispositivo
+        "id": "trap_eye_01"      # id do dispositivo
     }
     
     Retorna formato expandido para processamento interno
     """
-    # Detectar se é formato compacto (LoRa) ou expandido (legado)
-    if "dt" in compact_data and "hr" in compact_data:
-        # Formato compacto LoRa - expandir
+    # Detectar formato do gateway LoRa (com lora_data)
+    if "lora_data" in raw_data:
+        # Extrair dados do gateway
+        gateway_id = raw_data.get("client_id", "UNKNOWN_GATEWAY")
+        message_id = raw_data.get("message_id", 0)
+        rssi = raw_data.get("rssi", 0)
+        snr = raw_data.get("snr", 0)
+        
+        # Parsear lora_data (string JSON)
+        lora_data_str = raw_data.get("lora_data", "{}")
+        try:
+            compact_data = json.loads(lora_data_str)
+        except json.JSONDecodeError:
+            logger.error(f"[ERROR] Erro ao decodificar lora_data: {lora_data_str}")
+            compact_data = {}
+        
+        # Processar dados LoRa
         dt = compact_data.get("dt", "")  # ddmmyyyy
         hr = compact_data.get("hr", "00:00:00")
         
@@ -1230,9 +1253,13 @@ def expand_lora_payload(compact_data):
         else:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Expandir payload
+        # Expandir payload completo
         expanded = {
             "timestamp": timestamp,
+            "gateway_id": gateway_id,
+            "message_id": message_id,
+            "rssi": rssi,
+            "snr": snr,
             "tempo_inferencia_ms": compact_data.get("ti", 0),
             "deteccoes": {
                 "total": compact_data.get("m", 0),
@@ -1252,16 +1279,63 @@ def expand_lora_payload(compact_data):
         }
         
         return expanded
+    
+    # Detectar se é formato compacto direto (LoRa sem gateway)
+    elif "dt" in raw_data and "hr" in raw_data:
+        # Formato compacto LoRa - expandir
+        dt = raw_data.get("dt", "")  # ddmmyyyy
+        hr = raw_data.get("hr", "00:00:00")
+        
+        # Converter data de ddmmyyyy para yyyy-mm-dd
+        if len(dt) == 8:
+            day = dt[0:2]
+            month = dt[2:4]
+            year = dt[4:8]
+            timestamp = f"{year}-{month}-{day} {hr}"
+        else:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Expandir payload
+        expanded = {
+            "timestamp": timestamp,
+            "tempo_inferencia_ms": raw_data.get("ti", 0),
+            "deteccoes": {
+                "total": raw_data.get("m", 0),
+                "limiar_confianca": 0.5,  # Valor padrão (não vem no LoRa)
+                "confianca_media": raw_data.get("cm", 0),
+                "confianca_min": raw_data.get("cmin", 0),
+                "confianca_max": raw_data.get("cmax", 0),
+                "ocupacao_pct": raw_data.get("op", 0),
+                "area_total_px": 0,  # Não disponível no formato compacto
+                "itens": []  # Bounding boxes não são enviadas pelo LoRa
+            },
+            "diagnostico": {
+                "ocupacao_excessiva": raw_data.get("dg", {}).get("oe", False),
+                "anormal": raw_data.get("dg", {}).get("an", False)
+            },
+            "lora_id": raw_data.get("id", "UNKNOWN")
+        }
+        
+        return expanded
     else:
         # Já está no formato expandido (compatibilidade legado)
-        return compact_data
+        return raw_data
 
 @app.route('/api/messages', methods=['POST'])
 def receive_message():
     """
     Recebe detecções de moscas via POST e armazena
     
-    FORMATO COMPACTO LORA (RECOMENDADO - mensagens curtas):
+    FORMATO GATEWAY LORA (do gateway Pico):
+    {
+        "client_id": "gateway-pico",
+        "message_id": 146,
+        "lora_data": "{\"dt\":\"20112025\",\"hr\":\"16:06:49\",\"ti\":1579,\"m\":4,\"cm\":0.809,...}",
+        "rssi": -57,
+        "snr": 9
+    }
+    
+    FORMATO COMPACTO LORA (direto do dispositivo):
     {
         "dt": "20112025",        # data ddmmyyyy
         "hr": "14:30:45",        # hora
@@ -1275,7 +1349,7 @@ def receive_message():
             "oe": false,         # ocupacao_excessiva (op > 20)
             "an": false          # anormal (op > 30 OU m > 50)
         },
-        "id": "LORA-001"         # id do dispositivo
+        "id": "trap_eye_01"      # id do dispositivo
     }
     
     FORMATO EXPANDIDO (LEGADO - compatibilidade):
@@ -1292,7 +1366,7 @@ def receive_message():
             "ocupacao_excessiva": false,
             "anormal": false
         },
-        "lora_id": "LORA-001"
+        "lora_id": "trap_eye_01"
     }
     """
     try:
@@ -1312,11 +1386,14 @@ def receive_message():
         deteccoes = data.get('deteccoes', {})
         total_moscas = deteccoes.get('total', 0)
         lora_id = data.get('lora_id', 'Desconhecido')
+        gateway_id = data.get('gateway_id', 'Direto')
         diagnostico = data.get('diagnostico', {})
+        rssi = data.get('rssi', 0)
+        snr = data.get('snr', 0)
         
         # Log da requisição
         status = "ANORMAL" if diagnostico.get('anormal') else "ALERTA" if diagnostico.get('ocupacao_excessiva') else "NORMAL"
-        logger.info(f"[{status}] Detecção recebida: {total_moscas} moscas do dispositivo {lora_id}")
+        logger.info(f"[{status}] {total_moscas} moscas | Device: {lora_id} | Gateway: {gateway_id} | RSSI: {rssi} dBm | SNR: {snr} dB")
         
         # Adicionar metadata
         message_data = {
@@ -1324,7 +1401,7 @@ def receive_message():
             "source_ip": client_ip,
             "processed": True,
             "received_at": datetime.now().isoformat(),
-            "original_format": "lora_compact" if "dt" in raw_data else "expanded"
+            "original_format": "gateway_lora" if "lora_data" in raw_data else ("lora_compact" if "dt" in raw_data else "expanded")
         }
         
         # Armazenar mensagem
@@ -1336,13 +1413,42 @@ def receive_message():
             "message": f"Detecção recebida: {total_moscas} moscas",
             "stored": True,
             "message_id": len(messages_storage) - 1,
+            "device_id": lora_id,
+            "gateway_id": gateway_id,
             "diagnostico": diagnostico,
-            "format": "lora_compact" if "dt" in raw_data else "expanded"
+            "signal_quality": {
+                "rssi": rssi,
+                "snr": snr
+            },
+            "format": "gateway_lora" if "lora_data" in raw_data else ("lora_compact" if "dt" in raw_data else "expanded")
         }), 200
         
     except Exception as e:
         stats["errors"] += 1
         logger.error(f"[ERROR] Erro ao processar detecção: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/messages', methods=['DELETE'])
+def delete_all_messages():
+    """Apaga todas as mensagens armazenadas"""
+    try:
+        count = len(messages_storage)
+        messages_storage.clear()
+        
+        # Resetar estatísticas
+        stats["total_messages"] = 0
+        stats["errors"] = 0
+        
+        logger.info(f"🗑️  Todas as mensagens foram apagadas ({count} mensagens)")
+        
+        return jsonify({
+            "success": True,
+            "message": "Todas as mensagens foram apagadas",
+            "deleted_count": count
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"💥 Erro ao apagar mensagens: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/stats', methods=['GET'])
