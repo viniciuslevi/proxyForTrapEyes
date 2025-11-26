@@ -681,12 +681,11 @@ def index():
                             <th>Dispositivo LoRa</th>
                             <th>Moscas (Status)</th>
                             <th>Confiança</th>
-                            <th>Ocupação/BBoxes</th>
                         </tr>
                     </thead>
                     <tbody id="detections-table">
                         <tr>
-                            <td colspan="5" style="text-align: center; color: var(--text-secondary);">
+                            <td colspan="4" style="text-align: center; color: var(--text-secondary);">
                                 Carregando detecções...
                             </td>
                         </tr>
@@ -1057,7 +1056,7 @@ def index():
             if (!detections || detections.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="5" style="text-align: center; color: var(--text-secondary);">
+                        <td colspan="4" style="text-align: center; color: var(--text-secondary);">
                             Nenhuma detecção recebida ainda
                         </td>
                     </tr>
@@ -1073,8 +1072,6 @@ def index():
                 // Dados das detecções
                 const qtdFlies = deteccoes.total || 0;
                 const confMedia = deteccoes.confianca_media ? (deteccoes.confianca_media * 100).toFixed(1) : '0';
-                const ocupacao = deteccoes.ocupacao_pct ? deteccoes.ocupacao_pct.toFixed(1) : '0';
-                const numItens = deteccoes.itens ? deteccoes.itens.length : 0;
                 
                 // Determinar badge por diagnóstico
                 const badgeClass = diagnostico.anormal ? 'danger' : diagnostico.ocupacao_excessiva ? 'warning' : 'success';
@@ -1086,7 +1083,6 @@ def index():
                         <td><span class="badge badge-primary">📡 ${det.lora_id || 'N/A'}</span></td>
                         <td><span class="badge badge-${badgeClass}">${statusIcon} ${qtdFlies}</span></td>
                         <td>${confMedia}%</td>
-                        <td>${numItens} bbox • ${ocupacao}% ocup</td>
                     </tr>
                 `;
             }).join('');
